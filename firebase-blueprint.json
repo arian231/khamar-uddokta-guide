@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "An ebook product available for purchase.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the product" },
+        "category": { "type": "string", "description": "The category of the product" },
+        "price": { "type": "number", "description": "The price in BDT" },
+        "description": { "type": "string", "description": "Details about the ebook" },
+        "coverImage": { "type": "string", "description": "URL or base64 of the cover image" },
+        "pdfLink": { "type": "string", "description": "Download link for the PDF" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" }
+      },
+      "required": ["title", "price", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A user's order for a product.",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "price": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["customerName", "customerPhone", "productId", "transactionId"]
+    }
+  },
+  "firestore": {
+    "products/{productId}": {
+      "schema": "Product",
+      "description": "Stores the products available on the site."
+    },
+    "orders/{orderId}": {
+      "schema": "Order",
+      "description": "Stores the checkout orders submitted by users."
+    }
+  }
+}

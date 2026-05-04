@@ -6,17 +6,10 @@ import {
   Settings, Edit3, Save, X, ArrowLeft, Download, AlertCircle, ListOrdered, CheckCircle, Package, Plus, Trash2, FileText, Image as ImageIcon
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { db } from './firebase';
+import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
-const defaultProducts = [
-  { id: 1, name: 'ব্রয়লার মুরগি পালন এ-টু-জেড', price: 199, image: 'https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?auto=format&fit=crop&w=400&q=80' },
-  { id: 2, name: 'লেয়ার মুরগি ও ডিম উৎপাদন', price: 249, image: 'https://images.unsplash.com/photo-1502444330042-d1a1ddf9bb5b?auto=format&fit=crop&w=400&q=80' },
-  { id: 3, name: 'ছাগল পালন ব্যবসা গাইড', price: 299, image: 'https://images.unsplash.com/photo-1524024973431-2ad916746881?auto=format&fit=crop&w=400&q=80' },
-  { id: 4, name: 'গরু মোটাতাজাকরণ বিজনেস প্ল্যান', price: 399, image: 'https://images.unsplash.com/photo-1546445317-29f4545e9d53?auto=format&fit=crop&w=400&q=80' },
-  { id: 5, name: 'ডেইরি খামার স্টার্টআপ গাইড', price: 499, image: 'https://images.unsplash.com/photo-1511117833845-4df3303d7db2?auto=format&fit=crop&w=400&q=80' },
-  { id: 6, name: 'মৎস্য চাষ পূর্ণাঙ্গ গাইড', price: 299, image: 'https://images.unsplash.com/photo-1534043464124-3be32fe000c9?auto=format&fit=crop&w=400&q=80' },
-  { id: 7, name: 'হাঁস পালন ব্যবসা গাইড', price: 199, image: 'https://images.unsplash.com/photo-1555627196-1faeabe3a918?auto=format&fit=crop&w=400&q=80' },
-  { id: 8, name: 'খামারের আয়-ব্যয় এক্সেল শিট', price: 149, image: 'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&w=400&q=80' },
-];
+const defaultProducts: any[] = [];
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -25,15 +18,9 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
 
-  const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem('khamar_products');
-    return saved ? JSON.parse(saved) : defaultProducts;
-  });
+  const [products, setProducts] = useState<any[]>(defaultProducts);
 
-  const [orders, setOrders] = useState<any[]>(() => {
-    const saved = localStorage.getItem('khamar_orders');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [orders, setOrders] = useState<any[]>([]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -41,36 +28,38 @@ export default function App() {
     };
     window.addEventListener('popstate', handlePopState);
     
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'khamar_orders') {
-        setOrders(JSON.parse(e.newValue || '[]'));
-      }
-      if (e.key === 'khamar_products') {
-        setProducts(JSON.parse(e.newValue || '[]'));
-      }
-    };
-    window.addEventListener('storage', handleStorage);
+    // Listen to Firebase products
+    const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+      const productsData = snapshot.docs.map(doc => doc.data() as any);
+      setProducts(productsData.sort((a,b) => b.id - a.id));
+    }, (error) => {
+      console.error("Firebase fetch error", error);
+    });
+
+    // Listen to Firebase orders
+    const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => doc.data() as any);
+      setOrders(ordersData.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    }, error => {
+      console.error("Firebase fetch orders error", error);
+    });
     
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      window.removeEventListener('storage', handleStorage);
+      unsubscribeProducts();
+      unsubscribeOrders();
     }
   }, []);
 
   const updateProducts = (newProducts: any[]) => {
-    try {
-      localStorage.setItem('khamar_products', JSON.stringify(newProducts));
-      setProducts(newProducts);
-      return { success: true };
-    } catch (error: any) {
-      console.error('Storage error:', error);
-      return { success: false, error: 'ফাইল সাইজ অনেক বড়। দয়া করে ছোট সাইজের ছবি বা PDF আপলোড করুন।' };
-    }
+    // Only used as a fallback if AdminDashboard fails to use Firebase directly
+    console.warn("Storage fallback hit for products.");
+    return { success: true };
   };
 
   const updateOrders = (newOrders: any[]) => {
-    setOrders(newOrders);
-    localStorage.setItem('khamar_orders', JSON.stringify(newOrders));
+    // Only used as a fallback if AdminDashboard fails to use Firebase directly
+    console.warn("Storage fallback hit for orders.");
   };
 
   const handleBuy = (product: any) => {
@@ -79,18 +68,23 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
-  const handleSubmitOrder = (orderData: any) => {
+  const handleSubmitOrder = async (orderData: any) => {
     const newOrder = {
       ...orderData,
       id: Date.now().toString(),
       status: 'pending',
       date: new Date().toISOString()
     };
-    const newOrders = [newOrder, ...orders];
-    updateOrders(newOrders);
-    setCurrentOrderId(newOrder.id);
-    setCurrentView('status');
-    window.scrollTo(0, 0);
+    
+    try {
+      await setDoc(doc(db, 'orders', newOrder.id), newOrder);
+      setCurrentOrderId(newOrder.id);
+      setCurrentView('status');
+      window.scrollTo(0, 0);
+    } catch(e: any) {
+      console.error(e);
+      alert('অর্ডার সাবমিট করতে সমস্যা হয়েছে: ' + e.message);
+    }
   };
 
   if (currentPath === '/admin') {
@@ -360,8 +354,8 @@ function Products({ products, onBuy }: { products: any[], onBuy: (p: any) => voi
           {products.map((product, idx) => (
             <div key={idx} className="bg-white p-4 rounded-2xl border border-earth-100 flex flex-col justify-between hover:shadow-lg transition-all hover:-translate-y-1">
               <div className="relative h-56 w-full mb-4">
-                {product.image ? (
-                  <img src={product.image} alt={product.name} className="w-full h-full object-cover rounded-xl shadow-sm border border-earth-100" />
+                {(product.coverImageUrl || product.coverImage) ? (
+                  <img src={product.coverImageUrl || product.coverImage} alt={product.title} className="w-full h-full object-cover rounded-xl shadow-sm border border-earth-100" />
                 ) : (
                   <div className="w-full h-full rounded-xl bg-earth-100 border border-earth-200 flex flex-col items-center justify-center text-earth-400 gap-2">
                     <FileText className="w-8 h-8 opacity-50" />
@@ -379,9 +373,9 @@ function Products({ products, onBuy }: { products: any[], onBuy: (p: any) => voi
                 </div>
               </div>
               <div className="flex flex-col flex-grow px-2 pb-2">
-                <h3 className="font-semibold text-earth-900 mb-1 leading-snug">{product.name}</h3>
-                {product.shortDesc && (
-                  <p className="text-sm text-earth-600 mb-3 line-clamp-2">{product.shortDesc}</p>
+                <h3 className="font-semibold text-earth-900 mb-1 leading-snug">{product.title}</h3>
+                {product.description && (
+                  <p className="text-sm text-earth-600 mb-3 line-clamp-2">{product.description}</p>
                 )}
                 <div className="mt-auto flex items-center justify-between pt-4 border-t border-earth-100">
                    <span className="text-2xl font-bold text-brand-600">৳{product.price}</span>
@@ -466,7 +460,7 @@ function CheckoutPage({ product, onCancel, onSubmit }: { product: any, onCancel:
       customerPhone: phone,
       customerEmail: email,
       productId: product.id,
-      productName: product.name,
+      productName: product.title,
       price: product.price,
       paymentMethod: method,
       transactionId: trxId,
@@ -487,9 +481,9 @@ function CheckoutPage({ product, onCancel, onSubmit }: { product: any, onCancel:
                 <BookOpen className="w-4 h-4" /> নির্বাচিত ই-বুক
               </h3>
               <div className="mb-6 rounded-xl overflow-hidden border border-brand-800 bg-brand-800/50 p-2 shadow-lg h-48 sm:h-auto">
-                <img src={product.image} alt={product.name} className="w-full h-full sm:h-48 object-cover rounded-lg" />
+                <img src={product.coverImageUrl || product.coverImage} alt={product.title} className="w-full h-full sm:h-48 object-cover rounded-lg" />
               </div>
-              <h4 className="font-serif text-xl font-bold mb-2">{product.name}</h4>
+              <h4 className="font-serif text-xl font-bold mb-2">{product.title}</h4>
               <p className="text-brand-300 font-medium mb-8">PDF গাইড</p>
               <div className="mt-auto">
                 <span className="text-sm font-medium text-brand-300 mb-1 block">মোট মূল্য</span>
@@ -577,7 +571,7 @@ function TrackingPage({ orders, products, onBack }: { orders: any[], products: a
   };
 
   const handleDownload = (product: any) => {
-    const link = product?.pdfLink || product?.pdfUrl;
+    const link = product?.pdfLink;
     if (link) {
       window.open(link, '_blank');
     } else {
@@ -684,7 +678,7 @@ function OrderStatusPage({ orderId, orders, products, onBack }: { orderId: strin
 
   const handleDownload = () => {
     const product = products.find(p => p.id === order.productId);
-    const link = product?.pdfLink || product?.pdfUrl;
+    const link = product?.pdfLink;
     if (link) {
       window.open(link, '_blank');
     } else {
@@ -891,7 +885,7 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
     category: '',
     price: '',
     description: '',
-    coverImage: '',
+    coverImageUrl: '',
     pdfLink: '',
   });
 
@@ -902,12 +896,12 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
     if (product) {
       setEditingProduct(product);
       setFormData({
-        title: product.name || '',
+        title: product.title || '',
         category: product.category || '',
         price: product.price || '',
-        description: product.fullDesc || product.shortDesc || '',
-        coverImage: product.image || '',
-        pdfLink: product.pdfLink || product.pdfUrl || '',
+        description: product.description || '',
+        coverImageUrl: product.coverImageUrl || product.coverImage || '',
+        pdfLink: product.pdfLink || '',
       });
     } else {
       setEditingProduct(null);
@@ -916,65 +910,97 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
         category: '',
         price: '',
         description: '',
-        coverImage: '',
+        coverImageUrl: '',
         pdfLink: '',
       });
     }
     setIsProductModalOpen(true);
   };
 
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage(null);
-    let updatedArray = [];
-    if (editingProduct) {
-      updatedArray = products.map(p => 
-        p.id === editingProduct.id ? { 
-          ...p, 
-          name: formData.title,
-          category: formData.category,
-          price: Number(formData.price),
-          fullDesc: formData.description,
-          shortDesc: formData.description,
-          image: formData.coverImage,
-          pdfLink: formData.pdfLink,
-        } : p
-      );
-    } else {
-      const newProduct = {
-        id: Date.now(),
-        name: formData.title,
-        category: formData.category,
-        price: Number(formData.price),
-        fullDesc: formData.description,
-        shortDesc: formData.description,
-        image: formData.coverImage,
-        pdfLink: formData.pdfLink,
-        createdAt: new Date().toISOString()
-      };
-      updatedArray = [...products, newProduct];
+    console.log("Save clicked");
+    alert("Save button clicked");
+    
+    const missingInfo = [];
+    if (!formData.title) missingInfo.push("Title");
+    if (!formData.price) missingInfo.push("Price");
+    if (!formData.category) missingInfo.push("Category");
+    if (!formData.description) missingInfo.push("Description");
+    if (!formData.coverImageUrl) missingInfo.push("Cover Image URL");
+    if (!formData.pdfLink) missingInfo.push("PDF Link");
+
+    if (missingInfo.length > 0) {
+      setMessage({ type: 'error', text: `Please provide: ${missingInfo.join(', ')}` });
+      return;
     }
     
-    const result = setProducts(updatedArray);
-    if (result && result.success === false) {
-      setMessage({ type: 'error', text: result.error || 'একটি ত্রুটি ঘটেছে।' });
-    } else {
-      setMessage({ type: 'success', text: 'প্রোডাক্ট সফলভাবে সেভ হয়েছে!' });
+    setMessage(null);
+    try {
+      if (editingProduct) {
+        const updatedProduct = {
+          ...editingProduct,
+          title: formData.title,
+          category: formData.category,
+          price: Number(formData.price),
+          description: formData.description,
+          coverImageUrl: formData.coverImageUrl,
+          pdfLink: formData.pdfLink,
+        };
+        await setDoc(doc(db, 'products', updatedProduct.id.toString()), updatedProduct);
+        console.log("Product updated in Firebase.");
+      } else {
+        const newProduct = {
+          id: Date.now(),
+          title: formData.title,
+          category: formData.category,
+          price: Number(formData.price),
+          description: formData.description,
+          coverImageUrl: formData.coverImageUrl,
+          pdfLink: formData.pdfLink,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'products', newProduct.id.toString()), newProduct);
+        console.log("New product created in Firebase.");
+      }
+      
+      setMessage({ type: 'success', text: 'Product saved successfully' });
+      setFormData({
+        title: '',
+        category: '',
+        price: '',
+        description: '',
+        coverImageUrl: '',
+        pdfLink: '',
+      });
       setTimeout(() => {
         setIsProductModalOpen(false);
       }, 1500);
+    } catch (error: any) {
+      console.error('Firebase save error:', error);
+      setMessage({ type: 'error', text: 'Error saving product: ' + error.message });
     }
   };
 
-  const handleDeleteProduct = (id: number) => {
+  const handleDeleteProduct = async (id: number) => {
     if(confirm('আপনি কি নিশ্চিত যে এই প্রোডাক্ট ডিলিট করতে চান?')) {
-      setProducts(products.filter(p => p.id !== id));
+      try {
+        await deleteDoc(doc(db, 'products', id.toString()));
+      } catch (error: any) {
+        console.error('Firebase delete error:', error);
+        alert('ডিলিট করতে সমস্যা হয়েছে: ' + error.message);
+      }
     }
   };
 
-  const updateOrderStatus = (orderId: string, status: string) => {
-    const newOrders = orders.map(o => o.id === orderId ? { ...o, status } : o);
-    setOrders(newOrders);
+
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      await setDoc(doc(db, 'orders', orderId), { status }, { merge: true });
+    } catch(e: any) {
+      console.error(e);
+      alert('অর্ডার আপডেট করতে সমস্যা হয়েছে: ' + e.message);
+    }
   };
 
   return (
@@ -1003,7 +1029,7 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-earth-800 mb-1">ই-বুকের নাম</label>
-                  <input required autoFocus type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Product Title" />
+                  <input autoFocus type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Product Title" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-earth-800 mb-1">ক্যাটাগরি</label>
@@ -1011,38 +1037,25 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-earth-800 mb-1">মূল্য (৳)</label>
-                  <input required type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Price" />
+                  <input type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Price" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-earth-800 mb-1">বিস্তারিত বিবরণ</label>
                   <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Long description" />
                 </div>
                 <div className="md:col-span-2 border-t border-earth-100 pt-4 mt-2">
-                  <label className="block text-sm font-semibold text-earth-800 mb-2">কভার ফটো আপলোড করুন</label>
-                  <div className="flex items-center gap-4">
-                    <label className="px-4 py-2.5 bg-brand-50 text-brand-700 rounded-xl font-semibold text-sm cursor-pointer hover:bg-brand-100 transition-colors">
-                      ফাইল নির্বাচন করুন
-                      <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={e => {
-                        const file = e.target.files?.[0];
-                        if(file) {
-                          const reader = new FileReader();
-                          reader.onload = ev => { if(ev.target?.result) setFormData({...formData, coverImage: ev.target.result as string}) };
-                          reader.readAsDataURL(file);
-                        }
-                      }} />
-                    </label>
-                    <span className="text-sm text-earth-500">JPG, PNG বা WEBP</span>
-                  </div>
-                  {formData.coverImage && (
+                  <label className="block text-sm font-semibold text-earth-800 mb-2">Cover Image URL</label>
+                  <input type="url" value={formData.coverImageUrl} onChange={e => setFormData({...formData, coverImageUrl: e.target.value})} className="w-full px-4 py-3 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="https://example.com/image.jpg" />
+                  {formData.coverImageUrl && (
                     <div className="mt-4">
                       <p className="text-xs text-earth-500 mb-1 font-medium">ছবি প্রিভিউ:</p>
-                      <img src={formData.coverImage} alt="Preview" className="h-32 object-cover rounded-lg border border-earth-200" />
+                      <img src={formData.coverImageUrl} alt="Preview" className="h-32 object-cover rounded-lg border border-earth-200" />
                     </div>
                   )}
                 </div>
                 <div className="md:col-span-2 border-t border-earth-100 pt-4">
                   <label className="block text-sm font-semibold text-earth-800 mb-2">PDF Download Link</label>
-                  <input type="url" required value={formData.pdfLink} onChange={e => setFormData({...formData, pdfLink: e.target.value})} className="w-full px-4 py-3 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Google Drive / Dropbox / Mega link দিন" />
+                  <input type="text" value={formData.pdfLink} onChange={e => setFormData({...formData, pdfLink: e.target.value})} className="w-full px-4 py-3 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Google Drive / Dropbox / Mega link দিন (http:// সহ)" />
                 </div>
               </div>
               <div className="pt-4 border-t border-earth-100 flex justify-end gap-3">
@@ -1097,8 +1110,8 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
                   products.map(product => (
                     <div key={product.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 rounded-xl border border-earth-100 bg-earth-50/50 hover:bg-earth-50 transition-colors">
                       <div className="w-24 h-24 rounded-lg bg-earth-200 flex-shrink-0 overflow-hidden border border-earth-100 shadow-sm relative group">
-                        {product.image ? (
-                          <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                        {(product.coverImageUrl || product.coverImage) ? (
+                          <img src={product.coverImageUrl || product.coverImage} alt={product.title} className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-earth-400">No Img</div>
                         )}
@@ -1108,13 +1121,13 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start gap-2 mb-1">
-                          <h4 className="font-bold text-earth-900 truncate">{product.name}</h4>
+                          <h4 className="font-bold text-earth-900 truncate">{product.title}</h4>
                           <div className="bg-brand-50 text-brand-700 text-xs font-bold px-2 py-0.5 rounded ml-auto flex-shrink-0">
                             ৳{product.price}
                           </div>
                         </div>
                         {product.category && <p className="text-xs text-earth-500 mb-2">{product.category}</p>}
-                        {product.shortDesc && <p className="text-sm text-earth-600 truncate mb-2">{product.shortDesc}</p>}
+                        {product.description && <p className="text-sm text-earth-600 truncate mb-2">{product.description}</p>}
                         
                         <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-earth-100">
                           <button onClick={() => handleOpenModal(product)} className="text-xs font-semibold text-brand-600 hover:bg-brand-50 px-3 py-1.5 rounded-lg flex items-center transition-colors">
