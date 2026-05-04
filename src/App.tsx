@@ -58,8 +58,14 @@ export default function App() {
   }, []);
 
   const updateProducts = (newProducts: any[]) => {
-    setProducts(newProducts);
-    localStorage.setItem('khamar_products', JSON.stringify(newProducts));
+    try {
+      localStorage.setItem('khamar_products', JSON.stringify(newProducts));
+      setProducts(newProducts);
+      return { success: true };
+    } catch (error: any) {
+      console.error('Storage error:', error);
+      return { success: false, error: 'ফাইল সাইজ অনেক বড়। দয়া করে ছোট সাইজের ছবি বা PDF আপলোড করুন।' };
+    }
   };
 
   const updateOrders = (newOrders: any[]) => {
@@ -561,19 +567,21 @@ function TrackingPage({ orders, products, onBack }: { orders: any[], products: a
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const found = orders.find(o => o.customerPhone === phone && o.transactionId.toLowerCase() === trxId.toLowerCase());
+    const found = orders.find(o => 
+      o.customerPhone === phone && 
+      o.transactionId && 
+      o.transactionId.toLowerCase() === trxId.toLowerCase()
+    );
     setSearchedOrder(found || null);
     setHasSearched(true);
   };
 
   const handleDownload = (product: any) => {
-    if (product && product.pdfUrl) {
-      const a = document.createElement('a');
-      a.href = product.pdfUrl;
-      a.download = `${product.name}.pdf`;
-      a.click();
+    const link = product?.pdfLink || product?.pdfUrl;
+    if (link) {
+      window.open(link, '_blank');
     } else {
-      alert("দুঃখিত, এই ই-বুকের PDF ফাইল পাওয়া যায়নি। অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।");
+      alert("দুঃখিত, এই ই-বুকের PDF লিংক পাওয়া যায়নি। অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।");
     }
   };
 
@@ -676,13 +684,11 @@ function OrderStatusPage({ orderId, orders, products, onBack }: { orderId: strin
 
   const handleDownload = () => {
     const product = products.find(p => p.id === order.productId);
-    if (product && product.pdfUrl) {
-      const a = document.createElement('a');
-      a.href = product.pdfUrl; // base64 pdf string
-      a.download = `${product.name}.pdf`;
-      a.click();
+    const link = product?.pdfLink || product?.pdfUrl;
+    if (link) {
+      window.open(link, '_blank');
     } else {
-      alert("দুঃখিত, এই ই-বুকের PDF ফাইল পাওয়া যায়নি। অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।");
+      alert("দুঃখিত, এই ই-বুকের PDF লিংক পাওয়া যায়নি। অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।");
     }
   };
 
@@ -874,44 +880,44 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: { products: any[], setProducts: (p: any[]) => void, orders: any[], setOrders: (o: any[]) => void, onLogout: () => void }) {
+function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: { products: any[], setProducts: (p: any[]) => any, orders: any[], setOrders: (o: any[]) => void, onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<'products'|'orders'>('products');
   
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   
   const [formData, setFormData] = useState({
-    name: '',
+    title: '',
     category: '',
     price: '',
-    shortDesc: '',
-    fullDesc: '',
-    image: '',
-    pdfUrl: '',
+    description: '',
+    coverImage: '',
+    pdfLink: '',
   });
 
+  const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+
   const handleOpenModal = (product?: any) => {
+    setMessage(null);
     if (product) {
       setEditingProduct(product);
       setFormData({
-        name: product.name || '',
+        title: product.name || '',
         category: product.category || '',
         price: product.price || '',
-        shortDesc: product.shortDesc || '',
-        fullDesc: product.fullDesc || '',
-        image: product.image || '',
-        pdfUrl: product.pdfUrl || '',
+        description: product.fullDesc || product.shortDesc || '',
+        coverImage: product.image || '',
+        pdfLink: product.pdfLink || product.pdfUrl || '',
       });
     } else {
       setEditingProduct(null);
       setFormData({
-        name: '',
+        title: '',
         category: '',
         price: '',
-        shortDesc: '',
-        fullDesc: '',
-        image: '',
-        pdfUrl: '',
+        description: '',
+        coverImage: '',
+        pdfLink: '',
       });
     }
     setIsProductModalOpen(true);
@@ -919,20 +925,45 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
 
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
+    setMessage(null);
+    let updatedArray = [];
     if (editingProduct) {
-      const updatedProducts = products.map(p => 
-        p.id === editingProduct.id ? { ...p, ...formData, price: Number(formData.price) } : p
+      updatedArray = products.map(p => 
+        p.id === editingProduct.id ? { 
+          ...p, 
+          name: formData.title,
+          category: formData.category,
+          price: Number(formData.price),
+          fullDesc: formData.description,
+          shortDesc: formData.description,
+          image: formData.coverImage,
+          pdfLink: formData.pdfLink,
+        } : p
       );
-      setProducts(updatedProducts);
     } else {
       const newProduct = {
         id: Date.now(),
-        ...formData,
-        price: Number(formData.price)
+        name: formData.title,
+        category: formData.category,
+        price: Number(formData.price),
+        fullDesc: formData.description,
+        shortDesc: formData.description,
+        image: formData.coverImage,
+        pdfLink: formData.pdfLink,
+        createdAt: new Date().toISOString()
       };
-      setProducts([...products, newProduct]);
+      updatedArray = [...products, newProduct];
     }
-    setIsProductModalOpen(false);
+    
+    const result = setProducts(updatedArray);
+    if (result && result.success === false) {
+      setMessage({ type: 'error', text: result.error || 'একটি ত্রুটি ঘটেছে।' });
+    } else {
+      setMessage({ type: 'success', text: 'প্রোডাক্ট সফলভাবে সেভ হয়েছে!' });
+      setTimeout(() => {
+        setIsProductModalOpen(false);
+      }, 1500);
+    }
   };
 
   const handleDeleteProduct = (id: number) => {
@@ -960,11 +991,19 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
                 <X className="w-6 h-6" />
               </button>
             </div>
+            
+            {message && (
+              <div className={`mx-6 mt-4 p-4 rounded-xl flex items-center gap-3 ${message.type === 'success' ? 'bg-green-50 justify-center text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {message.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}
+                <span className="font-medium text-sm">{message.text}</span>
+              </div>
+            )}
+            
             <form onSubmit={handleSaveProduct} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-earth-800 mb-1">ই-বুকের নাম</label>
-                  <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Product Title" />
+                  <input required autoFocus type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Product Title" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-earth-800 mb-1">ক্যাটাগরি</label>
@@ -975,12 +1014,8 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
                   <input required type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Price" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-earth-800 mb-1">সংক্ষিপ্ত বিবরণ</label>
-                  <input type="text" value={formData.shortDesc} onChange={e => setFormData({...formData, shortDesc: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Short description" />
-                </div>
-                <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-earth-800 mb-1">বিস্তারিত বিবরণ</label>
-                  <textarea rows={3} value={formData.fullDesc} onChange={e => setFormData({...formData, fullDesc: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Long description" />
+                  <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Long description" />
                 </div>
                 <div className="md:col-span-2 border-t border-earth-100 pt-4 mt-2">
                   <label className="block text-sm font-semibold text-earth-800 mb-2">কভার ফটো আপলোড করুন</label>
@@ -991,44 +1026,30 @@ function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: 
                         const file = e.target.files?.[0];
                         if(file) {
                           const reader = new FileReader();
-                          reader.onload = ev => { if(ev.target?.result) setFormData({...formData, image: ev.target.result as string}) };
+                          reader.onload = ev => { if(ev.target?.result) setFormData({...formData, coverImage: ev.target.result as string}) };
                           reader.readAsDataURL(file);
                         }
                       }} />
                     </label>
                     <span className="text-sm text-earth-500">JPG, PNG বা WEBP</span>
                   </div>
-                  {formData.image && (
+                  {formData.coverImage && (
                     <div className="mt-4">
                       <p className="text-xs text-earth-500 mb-1 font-medium">ছবি প্রিভিউ:</p>
-                      <img src={formData.image} alt="Preview" className="h-32 object-cover rounded-lg border border-earth-200" />
+                      <img src={formData.coverImage} alt="Preview" className="h-32 object-cover rounded-lg border border-earth-200" />
                     </div>
                   )}
                 </div>
                 <div className="md:col-span-2 border-t border-earth-100 pt-4">
-                  <label className="block text-sm font-semibold text-earth-800 mb-2">PDF ফাইল আপলোড করুন</label>
-                   <div className="flex items-center gap-4">
-                    <label className="px-4 py-2.5 bg-earth-200 text-earth-800 rounded-xl font-semibold text-sm cursor-pointer hover:bg-earth-300 transition-colors">
-                      ফাইল নির্বাচন করুন
-                      <input type="file" accept=".pdf" className="hidden" onChange={e => {
-                        const file = e.target.files?.[0];
-                        if(file) {
-                          const reader = new FileReader();
-                          reader.onload = ev => { if(ev.target?.result) setFormData({...formData, pdfUrl: ev.target.result as string}) };
-                          reader.readAsDataURL(file);
-                        }
-                      }} />
-                    </label>
-                    <span className="text-sm text-earth-500">শুধুমাত্র PDF ফাইল</span>
-                  </div>
-                  {formData.pdfUrl && <p className="mt-3 text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle className="w-4 h-4" /> PDF ফাইল যুক্ত করা হয়েছে</p>}
+                  <label className="block text-sm font-semibold text-earth-800 mb-2">PDF Download Link</label>
+                  <input type="url" required value={formData.pdfLink} onChange={e => setFormData({...formData, pdfLink: e.target.value})} className="w-full px-4 py-3 border border-earth-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Google Drive / Dropbox / Mega link দিন" />
                 </div>
               </div>
               <div className="pt-4 border-t border-earth-100 flex justify-end gap-3">
                 <button type="button" onClick={() => setIsProductModalOpen(false)} className="px-5 py-2.5 rounded-xl border border-earth-200 text-earth-700 font-medium hover:bg-earth-50 transition-colors">
                   বাতিল করুন
                 </button>
-                <button type="submit" className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition-colors flex items-center gap-2">
+                <button type="submit" disabled={message?.type === 'success'} className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition-colors flex items-center gap-2 disabled:bg-brand-400 disabled:cursor-not-allowed">
                   <Save className="w-4 h-4" /> প্রোডাক্ট সেভ করুন
                 </button>
               </div>
