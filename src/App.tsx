@@ -19,7 +19,8 @@ const defaultProducts = [
 ];
 
 export default function App() {
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | 'checkout' | 'status' | 'tracking'>('home');
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
@@ -35,11 +36,10 @@ export default function App() {
   });
 
   useEffect(() => {
-    const handleHashChange = () => {
-      setIsAdmin(window.location.hash === '#admin');
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
     };
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handlePopState);
     
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'khamar_orders') {
@@ -52,7 +52,7 @@ export default function App() {
     window.addEventListener('storage', handleStorage);
     
     return () => {
-      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('storage', handleStorage);
     }
   }, []);
@@ -87,8 +87,11 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
-  if (isAdmin) {
-    return <AdminDashboard products={products} setProducts={updateProducts} orders={orders} setOrders={updateOrders} />;
+  if (currentPath === '/admin') {
+    if (!isAdminAuthenticated) {
+      return <AdminLogin onLogin={() => setIsAdminAuthenticated(true)} />;
+    }
+    return <AdminDashboard products={products} setProducts={updateProducts} orders={orders} setOrders={updateOrders} onLogout={() => setIsAdminAuthenticated(false)} />;
   }
 
   return (
@@ -820,9 +823,6 @@ function Footer() {
         <div className="text-center text-earth-500 text-sm flex flex-col sm:flex-row justify-between items-center">
           <p>© ২০২৬ খামার উদ্যোক্তা গাইড। সর্বস্বত্ব সংরক্ষিত।</p>
           <div className="mt-4 sm:mt-0 space-x-4">
-             <a href="#admin" className="hover:text-brand-400 transition-colors inline-flex items-center gap-1 group">
-               <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform" /> এডমিন
-             </a>
           </div>
         </div>
       </div>
@@ -830,7 +830,51 @@ function Footer() {
   );
 }
 
-function AdminDashboard({ products, setProducts, orders, setOrders }: { products: any[], setProducts: (p: any[]) => void, orders: any[], setOrders: (o: any[]) => void }) {
+function AdminLogin({ onLogin }: { onLogin: () => void }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === '225588') {
+      onLogin();
+    } else {
+      setError('পাসওয়ার্ড ভুল হয়েছে');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-earth-50 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-earth-200 max-w-sm w-full text-center">
+        <div className="w-16 h-16 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Settings className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-serif font-bold text-earth-900 mb-6">এডমিন লগইন</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <input 
+              type="password" 
+              value={password} 
+              onChange={e => { setPassword(e.target.value); setError(''); }}
+              placeholder="পাসওয়ার্ড" 
+              className="w-full px-4 py-3 bg-earth-50 border border-earth-200 rounded-xl focus:outline-none focus:border-brand-500 text-center tracking-widest text-lg" 
+              autoFocus
+            />
+            {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+          </div>
+          <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl transition-colors">
+            লগইন করুন
+          </button>
+        </form>
+        <a href="/" className="inline-block mt-6 text-earth-500 hover:text-brand-600 font-medium text-sm transition-colors">
+          হোমপেজে ফিরে যান
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboard({ products, setProducts, orders, setOrders, onLogout }: { products: any[], setProducts: (p: any[]) => void, orders: any[], setOrders: (o: any[]) => void, onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<'products'|'orders'>('products');
   
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -997,15 +1041,20 @@ function AdminDashboard({ products, setProducts, orders, setOrders }: { products
         <div className="bg-brand-900 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <h2 className="text-xl font-serif font-bold text-white flex items-center gap-2">
             <Settings className="w-5 h-5" />
-            Admin Dashboard
+            এডমিন ড্যাশবোর্ড
           </h2>
           <div className="flex bg-brand-800 rounded-full p-1">
-             <button onClick={() => setActiveTab('orders')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeTab === 'orders' ? 'bg-white text-brand-900' : 'text-brand-100 hover:text-white'}`}>Orders</button>
-             <button onClick={() => setActiveTab('products')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeTab === 'products' ? 'bg-white text-brand-900' : 'text-brand-100 hover:text-white'}`}>Products</button>
+             <button onClick={() => setActiveTab('orders')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeTab === 'orders' ? 'bg-white text-brand-900' : 'text-brand-100 hover:text-white'}`}>অর্ডারসমূহ</button>
+             <button onClick={() => setActiveTab('products')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeTab === 'products' ? 'bg-white text-brand-900' : 'text-brand-100 hover:text-white'}`}>প্রোডাক্টসমূহ</button>
           </div>
-          <a href="#" className="text-brand-100 hover:text-white text-sm font-medium transition-colors bg-brand-800 px-4 py-2 rounded-full hidden sm:block">
-            Back to Website
-          </a>
+          <div className="flex gap-2">
+            <button onClick={onLogout} className="text-brand-100 hover:text-white text-sm font-medium transition-colors bg-brand-800 px-3 py-1.5 rounded-full">
+              লগআউট
+            </button>
+            <a href="/" className="text-brand-100 hover:text-white text-sm font-medium transition-colors bg-brand-800 px-3 py-1.5 rounded-full">
+              ওয়েবসাইটে যান
+            </a>
+          </div>
         </div>
         
         <div className="p-6">
